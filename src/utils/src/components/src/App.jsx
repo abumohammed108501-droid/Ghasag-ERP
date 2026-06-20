@@ -82,27 +82,62 @@ export default function App() {
   const tax = subTotal * 0.15; // ضريبة القيمة المضافة 15%
   const total = subTotal + tax;
 
-  // 6. إتمام البيع وحفظ الفاتورة
+  // 6. إتمام البيع وحفظ الفاتورة + الترحيل المحاسبي التلقائي
   const handleCheckout = async () => {
     if (cart.length === 0) {
       playSound('error');
       alert('السلة فارغة!');
       return;
     }
+
     try {
-      await addDoc(collection(db, 'invoices'), {
+      // أ) حفظ الفاتورة أولاً في جدول الفواتير (invoices)
+      const invoiceRef = await addDoc(collection(db, 'invoices'), {
         items: cart,
-        subTotal,
-        tax,
-        total,
+        subTotal: Number(subTotal.toFixed(2)),
+        tax: Number(tax.toFixed(2)),
+        total: Number(total.toFixed(2)),
         createdAt: new Date()
       });
+
+      // ب) الترحيل المحاسبي التلقائي (صنع قيد يومي مزدوج متوازن)
+      await addDoc(collection(db, 'journal_entries'), {
+        invoiceId: invoiceRef.id, // ربط القيد برقم الفاتورة لسهولة المراجعة
+        date: new Date(),
+        description: `قيد تلقائي لفاتورة مبيعات رقم ${invoiceRef.id.substring(0, 5)}`,
+        
+        // أطراف القيد (الحسابات المدينة والدائنة)
+        entries: [
+          {
+            accountName: "حساب الصندوق / النقدية",
+            type: "مدين", // المدين هو من استلم المبلغ الإجمالي
+            amount: Number(total.toFixed(2))
+          },
+          {
+            accountName: "حساب إيرادات المبيعات",
+            type: "دائن", // الدائن هو قيمة البضاعة الصافية بدون ضريبة
+            amount: Number(subTotal.toFixed(2))
+          },
+          {
+            accountName: "حساب ضريبة القيمة المضافة المستحقة",
+            type: "دائن", // الدائن هنا هي الضريبة التي سندفعها للدولة لاحقاً
+            amount: Number(tax.toFixed(2))
+          }
+        ]
+      });
+
+      // ج) تفاعل النظام مع الكاشير بعد النجاح التام
       playSound('success');
-      alert('تم إصدار الفاتورة بنجاح وترحيلها محاسبياً! 🎉');
+      alert('تم إتمام البيع بنجاح، وتوليد القيد المحاسبي المتوازن تلقائياً في قاعدة البيانات! 📑🎉');
+      
+      // تفريغ السلة وإغلاق الشاشة المنزلقة
       setCart([]);
       setIsCartOpen(false);
+
     } catch (error) {
       playSound('error');
+      console.error("خطأ في الترحيل المحاسبي:", error);
+      alert('حدث خطأ أثناء حفظ الفاتورة والترحيل المحاسبي.');
     }
   };
 
@@ -148,7 +183,7 @@ export default function App() {
                 <div className="text-2xl mb-1">📦</div>
                 <div className="font-bold text-sm truncate">{product.name}</div>
                 <div className="text-green-500 font-extrabold mt-1 text-sm">{product.price} ريال</div>
-                <div className="text-[10px] text-gray-400 mt-1">🏷️ {productBarcode || product.barcode}</div>
+                <div className="text-[10px] text-gray-400 mt-1">🏷️ {product.barcode}</div>
               </div>
             ))}
           </div>
