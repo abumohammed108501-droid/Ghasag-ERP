@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>غسق ERP v1</title>
+
+  <link rel="stylesheet" href="assets/css/style.css" />
+
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dexie/3.2.4/dexie.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+  <div id="toast" class="toast"></div>
+
+  <div id="auth-screen" class="auth-box">
+    <h2>🔐 غسق ERP</h2>
+    <input type="email" id="auth-email" placeholder="البريد الإلكتروني" value="admin@ghasaq.com" />
+    <input type="password" id="auth-pass" placeholder="كلمة المرور" value="12345678" />
+    <button id="login-btn">دخول</button>
+    <p class="muted">سيتم إنشاء حساب تلقائياً عند الحاجة</p>
+  </div>
+
+  <div id="main-screen" class="container" style="display:none;">
+    <header class="header">
+      <h1>🏢 غسق ERP</h1>
+      <div class="user-badge">
+        <span id="user-info"></span>
+        <span id="sync-status" class="sync-status">🔄 غير متزامن</span>
+        <button id="logout-btn" class="btn-danger">خروج</button>
+      </div>
+    </header>
+
+    <div id="status-msg" class="status-bar">
+      <span>⏳ جاري التحميل...</span>
+      <span id="online-status">📶 غير متصل</span>
+    </div>
+
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="tab-daily">📋 اليومية</button>
+      <button class="tab-btn" data-tab="tab-sales">💰 المبيعات</button>
+      <button class="tab-btn" data-tab="tab-purchases">🛒 المشتريات</button>
+      <button class="tab-btn" data-tab="tab-expenses">🧾 المصروفات</button>
+      <button class="tab-btn" data-tab="tab-inventory">📦 المخزون</button>
+      <button class="tab-btn" data-tab="tab-clients">👥 العملاء</button>
+      <button class="tab-btn" data-tab="tab-suppliers">🏭 الموردين</button>
+      <button class="tab-btn" data-tab="tab-reports">📊 التقارير</button>
+      <button class="tab-btn" data-tab="tab-dashboard">📈 لوحة التحكم</button>
+      <button class="tab-btn" id="admin-tab-btn" data-tab="tab-admin" style="display:none;">⚙️ إدارة</button>
+      <button class="tab-btn" id="sync-btn">🔄 مزامنة</button>
+    </nav>
+
+    <section id="tab-daily" class="panel active">
+      <h2>دفتر اليومية</h2>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label>التاريخ</label>
+            <input type="date" id="journal-date" />
+          </div>
+          <div class="col">
+            <label>البيان</label>
+            <input type="text" id="journal-desc" placeholder="الوصف" />
+          </div>
+          <div class="col">
+            <label>المبلغ</label>
+            <input type="number" id="journal-amount" step="0.01" />
+          </div>
+          <div class="col">
+            <label>العملة</label>
+            <select id="journal-currency">
+              <option value="EGP">جنيه مصري</option>
+              <option value="USD">دولار</option>
+              <option value="EUR">يورو</option>
+            </select>
+          </div>
+          <div class="col">
+            <button id="add-journal-btn" class="btn-secondary">➕ إضافة</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>التاريخ</th>
+              <th>البيان</th>
+              <th>مدين</th>
+              <th>دائن</th>
+              <th>المبلغ</th>
+              <th>العملة</th>
+            </tr>
+          </thead>
+          <tbody id="journal-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-sales" class="panel">
+      <h2>تسجيل فاتورة مبيعات</h2>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label>النوع</label>
+            <select id="sale-type">
+              <option value="cash">نقدي</option>
+              <option value="credit">آجل</option>
+            </select>
+          </div>
+          <div class="col">
+            <label>العميل</label>
+            <select id="client-select">
+              <option value="">بدون</option>
+            </select>
+          </div>
+          <div class="col">
+            <label>الصنف</label>
+            <select id="sale-item"></select>
+          </div>
+          <div class="col">
+            <label>الكمية</label>
+            <input type="number" id="sale-qty" value="1" />
+          </div>
+          <div class="col">
+            <label>سعر الوحدة</label>
+            <input type="number" id="sale-price" step="0.01" />
+          </div>
+          <div class="col">
+            <label>العملة</label>
+            <select id="sale-currency">
+              <option value="EGP">جنيه</option>
+              <option value="USD">دولار</option>
+              <option value="EUR">يورو</option>
+            </select>
+          </div>
+          <div class="col">
+            <button id="sale-btn">💵 بيع</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>التاريخ</th>
+              <th>النوع</th>
+              <th>العميل</th>
+              <th>الصنف</th>
+              <th>الكمية</th>
+              <th>السعر</th>
+              <th>التكلفة</th>
+              <th>الإجمالي</th>
+            </tr>
+          </thead>
+          <tbody id="sales-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-purchases" class="panel">
+      <h2>تسجيل فاتورة شراء</h2>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label>النوع</label>
+            <select id="purchase-type">
+              <option value="cash">نقدي</option>
+              <option value="credit">آجل</option>
+            </select>
+          </div>
+          <div class="col">
+            <label>المورد</label>
+            <select id="supplier-select">
+              <option value="">بدون</option>
+            </select>
+          </div>
+          <div class="col">
+            <label>الصنف</label>
+            <select id="purchase-item"></select>
+          </div>
+          <div class="col">
+            <label>الكمية</label>
+            <input type="number" id="purchase-qty" value="1" />
+          </div>
+          <div class="col">
+            <label>سعر الشراء</label>
+            <input type="number" id="purchase-cost" step="0.01" />
+          </div>
+          <div class="col">
+            <label>العملة</label>
+            <select id="purchase-currency">
+              <option value="EGP">جنيه</option>
+              <option value="USD">دولار</option>
+              <option value="EUR">يورو</option>
+            </select>
+          </div>
+          <div class="col">
+            <button id="purchase-btn">🛒 شراء</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>التاريخ</th>
+              <th>النوع</th>
+              <th>المورد</th>
+              <th>الصنف</th>
+              <th>الكمية</th>
+              <th>السعر</th>
+              <th>الإجمالي</th>
+            </tr>
+          </thead>
+          <tbody id="purchases-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-expenses" class="panel">
+      <h2>تسجيل مصروف</h2>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label>الوصف</label>
+            <input type="text" id="expense-desc" placeholder="مثال: إيجار" />
+          </div>
+          <div class="col">
+            <label>المبلغ</label>
+            <input type="number" id="expense-amount" step="0.01" />
+          </div>
+          <div class="col">
+            <label>العملة</label>
+            <select id="expense-currency">
+              <option value="EGP">جنيه</option>
+              <option value="USD">دولار</option>
+              <option value="EUR">يورو</option>
+            </select>
+          </div>
+          <div class="col">
+            <button id="expense-btn" class="btn-warning">🧾 تسجيل</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>التاريخ</th>
+              <th>الوصف</th>
+              <th>المبلغ</th>
+              <th>العملة</th>
+            </tr>
+          </thead>
+          <tbody id="expenses-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-inventory" class="panel">
+      <h2>إدارة المخزون</h2>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label>اسم الصنف</label>
+            <input type="text" id="item-name" placeholder="اسم الصنف" />
+          </div>
+          <div class="col">
+            <label>الحد الأدنى</label>
+            <input type="number" id="item-min" value="5" />
+          </div>
+          <div class="col">
+            <label>سعر البيع</label>
+            <input type="number" id="item-price" step="0.01" value="0" />
+          </div>
+          <div class="col">
+            <button id="add-item-btn" class="btn-secondary">➕ إضافة صنف</button>
+          </div>
+        </div>
+      </div>
+      <div id="stock-alert" class="stock-alert success">✅ جميع الأصناف بكميات كافية</div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>الصنف</th>
+              <th>الكمية</th>
+              <th>سعر البيع</th>
+              <th>القيمة</th>
+              <th>الحد الأدنى</th>
+              <th>الحالة</th>
+            </tr>
+          </thead>
+          <tbody id="inventory-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-clients" class="panel">
+      <h2>العملاء</h2>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label>الاسم</label>
+            <input type="text" id="client-name" />
+          </div>
+          <div class="col">
+            <label>الهاتف</label>
+            <input type="text" id="client-phone" />
+          </div>
+          <div class="col">
+            <button id="add-client-btn" class="btn-secondary">➕ إضافة عميل</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th>الهاتف</th>
+              <th>الرصيد</th>
+            </tr>
+          </thead>
+          <tbody id="clients-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-suppliers" class="panel">
+      <h2>الموردين</h2>
+      <div class="card">
+        <div class="row">
+          <div class="col">
+            <label>الاسم</label>
+            <input type="text" id="supplier-name" />
+          </div>
+          <div class="col">
+            <label>الهاتف</label>
+            <input type="text" id="supplier-phone" />
+          </div>
+          <div class="col">
+            <button id="add-supplier-btn" class="btn-secondary">➕ إضافة مورد</button>
+          </div>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>الاسم</th>
+              <th>الهاتف</th>
+              <th>الرصيد</th>
+            </tr>
+          </thead>
+          <tbody id="suppliers-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-admin" class="panel">
+      <h2>لوحة الإدارة</h2>
+      <div class="card">
+        <p>هنا لاحقًا سنضيف: الأرصدة الافتتاحية، أسعار الصرف، الصلاحيات، والإقفال المالي.</p>
+      </div>
+    </section>
+
+    <section id="tab-reports" class="panel">
+      <h2>التقارير</h2>
+      <div class="card">
+        <button id="refresh-reports-btn" class="btn-secondary">🔄 تحديث الحسابات</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>كود الحساب</th>
+              <th>اسم الحساب</th>
+              <th>النوع</th>
+              <th>الرصيد</th>
+            </tr>
+          </thead>
+          <tbody id="chart-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-dashboard" class="panel">
+      <h2>لوحة التحكم</h2>
+      <div class="row">
+        <div class="col"><canvas id="revenueChart"></canvas></div>
+        <div class="col"><canvas id="expenseChart"></canvas></div>
+      </div>
+      <div class="row">
+        <div class="col"><canvas id="inventoryChart"></canvas></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/db.js"></script>
+  <script src="assets/js/auth.js"></script>
+  <script src="assets/js/accounting.js"></script>
+  <script src="assets/js/inventory.js"></script>
+  <script src="assets/js/sync.js"></script>
+  <script src="assets/js/reports.js"></script>
+  <script src="assets/js/ui.js"></script>
+  <script src="assets/js/app.js"></script>
+</body>
+</html>
